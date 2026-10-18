@@ -255,7 +255,41 @@ def persist_analysis_results(
                         ),
                     )
 
-            # 6. Compute security score & finalize scan
+            # 6. Build and persist Evidence Graph nodes and edges
+            from .pipeline.graph import GraphBuilder
+            builder = GraphBuilder(scan_id, artifact_sha256, result)
+            graph_nodes, graph_edges = builder.build()
+
+            node_id_map = {}
+            for n in graph_nodes:
+                cur.execute(
+                    """
+                    INSERT INTO evidence_nodes (scan_id, node_key, node_type, label, severity, properties)
+                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (scan_id, node_key) DO UPDATE
+                    SET label = EXCLUDED.label, properties = EXCLUDED.properties
+                    RETURNING id;
+                    """,
+                    (scan_id, n["node_key"], n["node_type"], n["label"], n["severity"], json.dumps(n["properties"]))
+                )
+                r = cur.fetchone()
+                if r:
+                    node_id_map[n["node_key"]] = r[0]
+
+            for e in graph_edges:
+                src_id = node_id_map.get(e["source_key"])
+                tgt_id = node_id_map.get(e["target_key"])
+                if src_id and tgt_id:
+                    cur.execute(
+                        """
+                        INSERT INTO evidence_edges (scan_id, source_id, target_id, edge_type, relation_status, provenance)
+                        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (scan_id, source_id, target_id, edge_type) DO NOTHING;
+                        """,
+                        (scan_id, src_id, tgt_id, e["edge_type"], e["relation_status"], json.dumps(e["provenance"]))
+                    )
+
+            # 7. Compute security score & finalize scan
             score = calculate_security_score(result.findings)
             score_breakdown = {
                 "algorithm": "scoring_v1",

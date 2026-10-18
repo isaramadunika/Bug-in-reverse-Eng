@@ -143,3 +143,59 @@ def test_calculate_security_score():
     # Clamp at 0 minimum
     excessive_findings = findings * 10
     assert calculate_security_score(excessive_findings) == 0
+
+def test_evidence_graph_builder():
+    from app.pipeline.graph import GraphBuilder
+    from app.models import AnalysisResult, ComponentModel, FindingModel
+
+    res = AnalysisResult(
+        package_name="com.test.app",
+        version_code="10",
+        version_name="1.0",
+        permissions=["android.permission.CAMERA", "android.permission.INTERNET"],
+        components=[
+            ComponentModel(
+                kind="activity",
+                name="com.test.app.MainActivity",
+                exported=True,
+                exported_explicit=True,
+                intent_filters=[{"actions": ["android.intent.action.MAIN"]}],
+            ),
+            ComponentModel(
+                kind="service",
+                name="com.test.app.InternalSyncService",
+                exported=False,
+                exported_explicit=True,
+                permission="android.permission.CAMERA",
+                intent_filters=[],
+            ),
+        ],
+        findings=[
+            FindingModel(
+                fingerprint="fp_cam",
+                rule_id="RB-PERM-001",
+                title="Camera Access",
+                description="Accesses camera",
+                severity="medium",
+                confidence="high",
+                category="permission",
+            )
+        ]
+    )
+
+    builder = GraphBuilder("scan-123", "sha-abc", res)
+    nodes, edges = builder.build()
+
+    node_types = {n["node_type"] for n in nodes}
+    assert "apk" in node_types
+    assert "permission" in node_types
+    assert "component" in node_types
+    assert "entry_point" in node_types
+    assert "finding" in node_types
+
+    edge_types = {e["edge_type"] for e in edges}
+    assert "DECLARES" in edge_types
+    assert "REQUIRES_PERMISSION" in edge_types
+    assert len(nodes) >= 5
+    assert len(edges) >= 4
+

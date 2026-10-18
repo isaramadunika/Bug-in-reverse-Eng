@@ -150,6 +150,18 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/projects/{projectID}/scans", httpx.Handler(s.createScan).ServeHTTP)
 				r.Get("/scans/{scanID}", httpx.Handler(s.getScan).ServeHTTP)
 				r.Post("/scans/{scanID}/cancel", httpx.Handler(s.cancelScan).ServeHTTP)
+
+				// Phase 3: Findings, Evidence Graph, Source Inspector & Reports
+				r.Get("/scans/{scanID}/findings", httpx.Handler(s.listFindings).ServeHTTP)
+				r.Get("/findings/{findingID}", httpx.Handler(s.getFinding).ServeHTTP)
+				r.Patch("/findings/{findingID}", httpx.Handler(s.updateFinding).ServeHTTP)
+				r.Get("/scans/{scanID}/evidence-graph", httpx.Handler(s.getEvidenceGraph).ServeHTTP)
+				r.Get("/scans/{scanID}/source-file", httpx.Handler(s.getSourceFile).ServeHTTP)
+
+				r.Get("/scans/{scanID}/reports", httpx.Handler(s.listReports).ServeHTTP)
+				r.Post("/scans/{scanID}/reports", httpx.Handler(s.createReport).ServeHTTP)
+				r.Get("/reports/{reportID}", httpx.Handler(s.getReport).ServeHTTP)
+				r.Get("/reports/{reportID}/download", httpx.Handler(s.downloadReport).ServeHTTP)
 			})
 
 			r.Route("/admin", func(r chi.Router) {
