@@ -101,8 +101,29 @@ services:
       RB_SMTP_FROM: ReverseBug <no-reply@reversebug.local>
       RB_DATA_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
       RB_API_KEY_PEPPER: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+      RB_STORAGE_DIR: /data/storage
+    volumes:
+      - storage_data:/data/storage
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    container_name: reversebug-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RB_ENV: development
+      RB_DATABASE_URL: postgres://reversebug:reversebug_dev_password@postgres:5432/reversebug?sslmode=disable
+      RB_STORAGE_DIR: /data/storage
+      RB_WORKER_POLL_INTERVAL: "2.0"
+    volumes:
+      - storage_data:/data/storage
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  storage_data:

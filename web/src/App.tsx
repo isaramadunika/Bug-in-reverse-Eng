@@ -26,6 +26,9 @@ import { MFAVerify } from './pages/auth/MFAVerify';
 // Authenticated Pages
 import { Dashboard } from './pages/dashboard/Dashboard';
 import { Settings } from './pages/dashboard/Settings';
+import { Projects } from './pages/projects/Projects';
+import { ProjectDetail } from './pages/projects/ProjectDetail';
+import { ScanDetail } from './pages/scans/ScanDetail';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading, mfaPending } = useAuth();
@@ -87,6 +90,30 @@ export const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects"
+              element={
+                <ProtectedRoute>
+                  <Projects />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:projectId"
+              element={
+                <ProtectedRoute>
+                  <ProjectDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/scans/:scanId"
+              element={
+                <ProtectedRoute>
+                  <ScanDetail />
                 </ProtectedRoute>
               }
             />

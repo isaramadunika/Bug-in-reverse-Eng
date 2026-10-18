@@ -41,6 +41,14 @@ func Validation(fields map[string]string) *APIError {
 		Message: "Some fields are invalid.", Fields: fields}
 }
 
+func BadRequest(msg string) *APIError {
+	return NewError(http.StatusBadRequest, "bad_request", msg)
+}
+
+func Error(status int, msg string) *APIError {
+	return NewError(status, "error", msg)
+}
+
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

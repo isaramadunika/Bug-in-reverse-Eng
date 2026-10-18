@@ -15,29 +15,32 @@ import (
 	"github.com/tetraneurons/reversebug/api/internal/httpx"
 	"github.com/tetraneurons/reversebug/api/internal/mail"
 	"github.com/tetraneurons/reversebug/api/internal/ratelimit"
+	"github.com/tetraneurons/reversebug/api/internal/storage"
 	"github.com/tetraneurons/reversebug/api/internal/store"
 )
 
 type Server struct {
-	cfg     *config.Config
-	store   *store.Store
-	audit   *audit.Logger
-	mailer  mail.Mailer
-	limiter ratelimit.Limiter
-	sealer  *auth.Sealer
-	argon   auth.Argon2Params
-	now     func() time.Time
+	cfg      *config.Config
+	store    *store.Store
+	storage  storage.Storage
+	audit    *audit.Logger
+	mailer   mail.Mailer
+	limiter  ratelimit.Limiter
+	sealer   *auth.Sealer
+	argon    auth.Argon2Params
+	now      func() time.Time
 	// mailWG lets tests wait for asynchronous email delivery.
 	sendMail func(ctx context.Context, m mail.Message)
 }
 
 type Deps struct {
-	Config  *config.Config
-	Store   *store.Store
-	Audit   *audit.Logger
-	Mailer  mail.Mailer
-	Limiter ratelimit.Limiter
-	Argon   *auth.Argon2Params
+	Config   *config.Config
+	Store    *store.Store
+	Storage  storage.Storage
+	Audit    *audit.Logger
+	Mailer   mail.Mailer
+	Limiter  ratelimit.Limiter
+	Argon    *auth.Argon2Params
 	// SyncMail sends email inline (tests). Production sends in the background so
 	// response timing does not reveal whether an account exists.
 	SyncMail bool
@@ -48,7 +51,15 @@ func New(d Deps) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: d.Config, store: d.Store, audit: d.Audit, mailer: d.Mailer, limiter: d.Limiter,
+	stg := d.Storage
+	if stg == nil {
+		localStorage, err := storage.NewLocal(d.Config.StorageDir)
+		if err != nil {
+			return nil, err
+		}
+		stg = localStorage
+	}
+	s := &Server{cfg: d.Config, store: d.Store, storage: stg, audit: d.Audit, mailer: d.Mailer, limiter: d.Limiter,
 		sealer: sealer, argon: auth.DefaultArgon2, now: time.Now}
 	if d.Argon != nil {
 		s.argon = *d.Argon
@@ -118,6 +129,27 @@ func (s *Server) Routes() http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireVerifiedEmail)
 				r.Get("/dashboard/summary", httpx.Handler(s.dashboard).ServeHTTP)
+
+				// Projects & Attestation
+				r.Get("/projects", httpx.Handler(s.listProjects).ServeHTTP)
+				r.Post("/projects", httpx.Handler(s.createProject).ServeHTTP)
+				r.Get("/projects/{projectID}", httpx.Handler(s.getProject).ServeHTTP)
+				r.Patch("/projects/{projectID}", httpx.Handler(s.updateProject).ServeHTTP)
+				r.Delete("/projects/{projectID}", httpx.Handler(s.deleteProject).ServeHTTP)
+				r.Get("/projects/{projectID}/authorizations", httpx.Handler(s.listAuthorizations).ServeHTTP)
+				r.Post("/projects/{projectID}/authorizations", httpx.Handler(s.createAuthorization).ServeHTTP)
+
+				// Artifacts
+				r.Get("/projects/{projectID}/artifacts", httpx.Handler(s.listArtifactVersions).ServeHTTP)
+				r.Post("/projects/{projectID}/artifacts/uploads", httpx.Handler(s.uploadArtifact).ServeHTTP)
+				r.Post("/projects/{projectID}/artifacts/import-url", httpx.Handler(s.importArtifactURL).ServeHTTP)
+				r.Get("/artifacts/{versionID}", httpx.Handler(s.getArtifactVersion).ServeHTTP)
+
+				// Scans
+				r.Get("/projects/{projectID}/scans", httpx.Handler(s.listScans).ServeHTTP)
+				r.Post("/projects/{projectID}/scans", httpx.Handler(s.createScan).ServeHTTP)
+				r.Get("/scans/{scanID}", httpx.Handler(s.getScan).ServeHTTP)
+				r.Post("/scans/{scanID}/cancel", httpx.Handler(s.cancelScan).ServeHTTP)
 			})
 
 			r.Route("/admin", func(r chi.Router) {

@@ -77,6 +77,13 @@ export const Navbar: React.FC = () => {
                 <span>Dashboard</span>
               </Link>
               <Link
+                to="/projects"
+                className="hidden sm:flex items-center space-x-1.5 text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-md border border-white/10 transition-colors"
+              >
+                <FileText className="h-3.5 w-3.5 text-cyan-400" />
+                <span>Projects</span>
+              </Link>
+              <Link
                 to="/settings"
                 className="flex items-center space-x-2 text-xs text-slate-300 hover:text-white bg-navy-900 border border-white/10 px-3 py-1.5 rounded-md"
               >

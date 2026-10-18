@@ -37,6 +37,7 @@ type Config struct {
 	SessionAbsoluteTimeout time.Duration
 	AdminRequireMFA        bool
 	MaxUploadBytes         int64
+	StorageDir             string
 }
 
 func (c *Config) IsDev() bool { return c.Env == "development" }
@@ -48,6 +49,7 @@ func Load() (*Config, error) {
 		DatabaseURL:            os.Getenv("RB_DATABASE_URL"),
 		RedisURL:               os.Getenv("RB_REDIS_URL"),
 		PublicBaseURL:          strings.TrimRight(getenv("RB_PUBLIC_BASE_URL", "http://localhost:5173"), "/"),
+		StorageDir:             getenv("RB_STORAGE_DIR", "./data/storage"),
 		SMTPHost:               getenv("RB_SMTP_HOST", "localhost"),
 		SMTPUser:               os.Getenv("RB_SMTP_USER"),
 		SMTPPassword:           os.Getenv("RB_SMTP_PASSWORD"),

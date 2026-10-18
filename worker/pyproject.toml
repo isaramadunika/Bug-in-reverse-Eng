@@ -1,0 +1,25 @@
+[project]
+name = "reversebug-worker"
+version = "0.1.0"
+description = "ReverseBug Asynchronous Android Reverse-Engineering & Security Analysis Engine"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.1.18",
+    "pydantic>=2.7.0",
+    "cryptography>=42.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
