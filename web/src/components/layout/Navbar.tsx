@@ -11,7 +11,9 @@ import {
   LogOut, 
   User as UserIcon, 
   Layers,
-  Sparkles
+  Sparkles,
+  Key,
+  CreditCard
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -20,6 +22,7 @@ export const Navbar: React.FC = () => {
   const location = useLocation();
 
   const isAuthPage = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email'].includes(location.pathname);
+  const isAdmin = user && ['support_admin', 'billing_admin', 'system_admin'].includes(user.platform_role);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-navy-950/80 backdrop-blur-md">
@@ -68,7 +71,7 @@ export const Navbar: React.FC = () => {
         {/* User / Auth CTAs */}
         <div className="flex items-center space-x-3">
           {user ? (
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <Link
                 to="/dashboard"
                 className="hidden sm:flex items-center space-x-1.5 text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-md border border-white/10 transition-colors"
@@ -84,16 +87,37 @@ export const Navbar: React.FC = () => {
                 <span>Projects</span>
               </Link>
               <Link
+                to="/api-keys"
+                className="hidden md:flex items-center space-x-1.5 text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-md border border-white/10 transition-colors"
+                title="API Keys"
+              >
+                <Key className="h-3.5 w-3.5 text-amber-400" />
+                <span>API Keys</span>
+              </Link>
+              <Link
+                to="/billing"
+                className="hidden md:flex items-center space-x-1.5 text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1.5 rounded-md border border-white/10 transition-colors"
+                title="Billing & Subscriptions"
+              >
+                <CreditCard className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Billing</span>
+              </Link>
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className="flex items-center space-x-1.5 text-xs font-medium text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-md border border-cyan-500/30 transition-colors"
+                  title="Administrator Console"
+                >
+                  <ShieldAlert className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Admin</span>
+                </Link>
+              )}
+              <Link
                 to="/settings"
                 className="flex items-center space-x-2 text-xs text-slate-300 hover:text-white bg-navy-900 border border-white/10 px-3 py-1.5 rounded-md"
               >
                 <UserIcon className="h-3.5 w-3.5 text-brand-400" />
                 <span className="font-medium max-w-[100px] truncate">{user.display_name}</span>
-                {user.platform_role !== 'user' && (
-                  <span className="bg-brand-500/20 text-brand-300 px-1.5 py-0.5 text-[10px] rounded uppercase font-mono">
-                    {user.platform_role.replace('_', ' ')}
-                  </span>
-                )}
               </Link>
               <button
                 onClick={async () => {

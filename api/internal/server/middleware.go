@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/tetraneurons/reversebug/api/internal/auth"
@@ -19,6 +20,7 @@ type ctxKey int
 const (
 	sessionKey ctxKey = iota
 	userKey
+	apiKeyKey
 )
 
 func (s *Server) cookieName() string {
@@ -51,9 +53,48 @@ func userFrom(ctx context.Context) *store.User {
 	return v
 }
 
-// loadSession resolves the session cookie, if present, into the request context.
+func apiKeyFrom(ctx context.Context) *store.APIKey {
+	v, _ := ctx.Value(apiKeyKey).(*store.APIKey)
+	return v
+}
+
+// loadSession resolves API keys or the session cookie into the request context.
 func (s *Server) loadSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Check for API Key in Authorization or X-API-Key header
+		var apiToken string
+		if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if strings.HasPrefix(token, "rb_live_") {
+				apiToken = token
+			}
+		} else if xKey := r.Header.Get("X-API-Key"); strings.HasPrefix(xKey, "rb_live_") {
+			apiToken = xKey
+		}
+
+		if apiToken != "" {
+			k, u, err := s.store.AuthenticateAPIKey(r.Context(), apiToken, s.cfg.APIKeyPepper, s.ip(r))
+			if err != nil {
+				if errors.Is(err, store.ErrAPIKeyInvalid) {
+					httpx.WriteError(w, r, httpx.NewError(http.StatusUnauthorized, "invalid_api_key", "Invalid or revoked API key."))
+					return
+				}
+				httpx.WriteError(w, r, err)
+				return
+			}
+			syntheticSession := &store.Session{
+				ID:          "apikey:" + k.ID,
+				UserID:      u.ID,
+				MFAVerified: true,
+			}
+			ctx := context.WithValue(r.Context(), sessionKey, syntheticSession)
+			ctx = context.WithValue(ctx, userKey, u)
+			ctx = context.WithValue(ctx, apiKeyKey, k)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// 2. Cookie session
 		c, err := r.Cookie(s.cookieName())
 		if err != nil || c.Value == "" || len(c.Value) > 128 {
 			next.ServeHTTP(w, r)
@@ -81,11 +122,16 @@ func (s *Server) loadSession(next http.Handler) http.Handler {
 }
 
 // csrfProtect applies to every state-changing request:
-//  1. If an Origin header is present it must be allowlisted.
-//  2. Cookie-authenticated requests must echo the session's CSRF token.
+//  1. Requests authenticated via API key are exempt.
+//  2. If an Origin header is present it must be allowlisted.
+//  3. Cookie-authenticated requests must echo the session's CSRF token.
 func (s *Server) csrfProtect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if httpx.IsSafeMethod(r.Method) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if apiKeyFrom(r.Context()) != nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -160,6 +206,11 @@ func (s *Server) requireAdmin(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u, sess := userFrom(r.Context()), sessionFrom(r.Context())
+			if apiKeyFrom(r.Context()) != nil {
+				s.auditReq(r, "admin.access", "route", r.URL.Path, "denied", map[string]any{"reason": "api_keys_not_permitted"})
+				httpx.WriteError(w, r, httpx.ErrForbidden)
+				return
+			}
 			if u == nil || !slices.Contains(roles, u.PlatformRole) {
 				s.auditReq(r, "admin.access", "route", r.URL.Path, "denied", nil)
 				httpx.WriteError(w, r, httpx.ErrForbidden)

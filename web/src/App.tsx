@@ -29,6 +29,9 @@ import { Settings } from './pages/dashboard/Settings';
 import { Projects } from './pages/projects/Projects';
 import { ProjectDetail } from './pages/projects/ProjectDetail';
 import { ScanDetail } from './pages/scans/ScanDetail';
+import { ApiKeys } from './pages/settings/ApiKeys';
+import { Billing } from './pages/billing/Billing';
+import { AdminConsole } from './pages/admin/AdminConsole';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading, mfaPending } = useAuth();
@@ -55,6 +58,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
       {children}
     </>
   );
+};
+
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user || !['support_admin', 'billing_admin', 'system_admin'].includes(user.platform_role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
 };
 
 export const App: React.FC = () => {
@@ -118,10 +130,36 @@ export const App: React.FC = () => {
               }
             />
             <Route
+              path="/api-keys"
+              element={
+                <ProtectedRoute>
+                  <ApiKeys />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute>
+                  <Billing />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/settings"
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminRoute>
+                    <AdminConsole />
+                  </AdminRoute>
                 </ProtectedRoute>
               }
             />

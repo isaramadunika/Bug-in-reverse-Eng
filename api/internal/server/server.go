@@ -170,10 +170,24 @@ func (s *Server) Routes() http.Handler {
 				r.Get("/scans/{scanID}/findings/{findingID}/analyses", httpx.Handler(s.listFindingAnalyses).ServeHTTP)
 				r.Get("/analyses/{analysisID}", httpx.Handler(s.getAnalysis).ServeHTTP)
 				r.Post("/scans/{scanID}/ask", httpx.Handler(s.askCopilot).ServeHTTP)
+
+				// Phase 5: API Key Management
+				r.Get("/api-keys", httpx.Handler(s.listAPIKeys).ServeHTTP)
+				r.Post("/api-keys", httpx.Handler(s.createAPIKey).ServeHTTP)
+				r.Delete("/api-keys/{keyID}", httpx.Handler(s.revokeAPIKey).ServeHTTP)
+
+				// Phase 5: Billing & Subscriptions
+				r.Get("/billing/subscription", httpx.Handler(s.getSubscription).ServeHTTP)
+				r.Post("/billing/upgrade", httpx.Handler(s.upgradeSubscription).ServeHTTP)
+				r.Post("/billing/cancel", httpx.Handler(s.cancelSubscription).ServeHTTP)
 			})
 
 			r.Route("/admin", func(r chi.Router) {
 				r.Use(s.requireAdmin("support_admin", "billing_admin", "system_admin"))
+				r.Get("/stats", httpx.Handler(s.adminStats).ServeHTTP)
+				r.Get("/users", httpx.Handler(s.adminListUsers).ServeHTTP)
+				r.Patch("/users/{userID}", httpx.Handler(s.adminUpdateUser).ServeHTTP)
+				r.Get("/audit/events", httpx.Handler(s.adminListAuditEvents).ServeHTTP)
 				r.Get("/audit/verify", httpx.Handler(s.adminVerifyAudit).ServeHTTP)
 			})
 		})

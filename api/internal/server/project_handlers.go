@@ -16,6 +16,9 @@ func (s *Server) resolveOrgID(r *http.Request, u *store.User) (string, error) {
 	if explicit := r.Header.Get("X-Organization-ID"); explicit != "" {
 		return explicit, nil
 	}
+	if k := apiKeyFrom(r.Context()); k != nil && k.OrganizationID != "" {
+		return k.OrganizationID, nil
+	}
 	orgID, err := s.store.UserPersonalOrgID(r.Context(), u.ID)
 	if err != nil {
 		return "", err
