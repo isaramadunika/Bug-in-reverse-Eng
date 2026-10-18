@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: reversebug-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reversebug
+      POSTGRES_USER: reversebug
+      POSTGRES_PASSWORD: reversebug_dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reversebug -d reversebug"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: reversebug-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: reversebug-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-create-buckets:
+    image: quay.io/minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadminpassword;
+      mc mb --ignore-existing local/rb-quarantine;
+      mc mb --ignore-existing local/rb-artifacts;
+      mc mb --ignore-existing local/rb-reports;
+      exit 0;
+      "
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: reversebug-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    environment:
+      MP_MAX_MESSAGES: 500
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    container_name: reversebug-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      RB_ENV: development
+      RB_HTTP_ADDR: :8080
+      RB_DATABASE_URL: postgres://reversebug:reversebug_dev_password@postgres:5432/reversebug?sslmode=disable
+      RB_REDIS_URL: redis://redis:6379/0
+      RB_PUBLIC_BASE_URL: http://localhost:5173
+      RB_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:8080
+      RB_COOKIE_SECURE: "false"
+      RB_SMTP_HOST: mailpit
+      RB_SMTP_PORT: 1025
+      RB_SMTP_FROM: ReverseBug <no-reply@reversebug.local>
+      RB_DATA_ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+      RB_API_KEY_PEPPER: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

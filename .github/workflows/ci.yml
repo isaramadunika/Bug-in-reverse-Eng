@@ -1,0 +1,85 @@
+name: ReverseBug CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-test:
+    name: Go API & Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: reversebug
+          POSTGRES_USER: reversebug
+          POSTGRES_PASSWORD: reversebug_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: api/go.sum
+
+      - name: Install dependencies
+        working-directory: api
+        run: go mod download
+
+      - name: Run Unit & Integration Tests
+        working-directory: api
+        env:
+          RB_DATABASE_URL: postgres://reversebug:reversebug_dev_password@localhost:5432/reversebug?sslmode=disable
+          RB_REDIS_URL: redis://localhost:6379/0
+        run: |
+          go run ./cmd/rbctl migrate
+          go test -v -race ./...
+
+      - name: Build Binaries
+        working-directory: api
+        run: |
+          CGO_ENABLED=0 go build -v ./cmd/api
+          CGO_ENABLED=0 go build -v ./cmd/rbctl
+
+  frontend-test:
+    name: Web Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck & Production Build
+        working-directory: web
+        run: npm run build

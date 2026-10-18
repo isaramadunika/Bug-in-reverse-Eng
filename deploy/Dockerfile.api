@@ -1,0 +1,27 @@
+# Multi-stage build for Go API
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /src
+
+# Cache dependencies
+COPY api/go.mod api/go.sum* ./
+RUN go mod download
+
+# Build statically-linked binaries
+COPY api/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/reversebug-api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /bin/rbctl ./cmd/rbctl
+
+FROM alpine:3.20 AS runner
+RUN apk --no-cache add ca-certificates tzdata curl
+
+# Non-root unprivileged service user
+RUN addgroup -S reversebug && adduser -S reversebug -G reversebug
+USER reversebug
+
+COPY --from=builder /bin/reversebug-api /usr/local/bin/reversebug-api
+COPY --from=builder /bin/rbctl /usr/local/bin/rbctl
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/reversebug-api"]
