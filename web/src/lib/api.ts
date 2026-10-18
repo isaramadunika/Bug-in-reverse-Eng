@@ -72,6 +72,13 @@ export async function apiRequest<T>(
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 401 && !endpoint.includes('/auth/')) {
+      const path = window.location.pathname;
+      const isPublic = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/', '/features', '/how-it-works', '/methodology', '/pricing', '/docs', '/sample-report'].includes(path);
+      if (!isPublic) {
+        window.location.href = '/login?expired=true';
+      }
+    }
     throw new APIClientError(response.status, data as APIErrorResponse);
   }
 

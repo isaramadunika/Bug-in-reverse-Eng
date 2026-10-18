@@ -49,6 +49,13 @@ export const Login: React.FC = () => {
           <p className="text-xs text-slate-400">Enter your credentials to access your security intelligence dashboard</p>
         </div>
 
+        {new URLSearchParams(window.location.search).get('expired') && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-start space-x-2 text-xs text-amber-300">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+            <span>Your session has expired or you signed out. Please sign in to continue.</span>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start space-x-2 text-xs text-red-300">
             <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />

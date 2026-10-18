@@ -69,6 +69,7 @@ export const Projects: React.FC = () => {
           name: name.trim(),
           description: description.trim(),
           package_name: packageName.trim() || undefined,
+          application_owner: 'SecOps Team',
           environment,
           tags: ['android', environment],
         }),
