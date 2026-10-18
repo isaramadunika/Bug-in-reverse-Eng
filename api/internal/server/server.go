@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/tetraneurons/reversebug/api/internal/ai"
 	"github.com/tetraneurons/reversebug/api/internal/audit"
 	"github.com/tetraneurons/reversebug/api/internal/auth"
 	"github.com/tetraneurons/reversebug/api/internal/config"
@@ -28,6 +29,7 @@ type Server struct {
 	limiter  ratelimit.Limiter
 	sealer   *auth.Sealer
 	argon    auth.Argon2Params
+	ai       *ai.Engine
 	now      func() time.Time
 	// mailWG lets tests wait for asynchronous email delivery.
 	sendMail func(ctx context.Context, m mail.Message)
@@ -59,7 +61,7 @@ func New(d Deps) (*Server, error) {
 		}
 		stg = localStorage
 	}
-	s := &Server{cfg: d.Config, store: d.Store, storage: stg, audit: d.Audit, mailer: d.Mailer, limiter: d.Limiter,
+	s := &Server{cfg: d.Config, store: d.Store, storage: stg, ai: ai.NewEngine(d.Store, stg), audit: d.Audit, mailer: d.Mailer, limiter: d.Limiter,
 		sealer: sealer, argon: auth.DefaultArgon2, now: time.Now}
 	if d.Argon != nil {
 		s.argon = *d.Argon
@@ -162,6 +164,12 @@ func (s *Server) Routes() http.Handler {
 				r.Post("/scans/{scanID}/reports", httpx.Handler(s.createReport).ServeHTTP)
 				r.Get("/reports/{reportID}", httpx.Handler(s.getReport).ServeHTTP)
 				r.Get("/reports/{reportID}/download", httpx.Handler(s.downloadReport).ServeHTTP)
+
+				// Phase 4: AI Agent Investigation & Scan Copilot
+				r.Post("/scans/{scanID}/findings/{findingID}/analyses", httpx.Handler(s.investigateFinding).ServeHTTP)
+				r.Get("/scans/{scanID}/findings/{findingID}/analyses", httpx.Handler(s.listFindingAnalyses).ServeHTTP)
+				r.Get("/analyses/{analysisID}", httpx.Handler(s.getAnalysis).ServeHTTP)
+				r.Post("/scans/{scanID}/ask", httpx.Handler(s.askCopilot).ServeHTTP)
 			})
 
 			r.Route("/admin", func(r chi.Router) {

@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { EvidenceGraph, EvidenceNodeData, EvidenceEdgeData } from '../../components/graph/EvidenceGraph';
 import { CodeInspector } from '../../components/inspector/CodeInspector';
+import { AIInvestigationModal } from '../../components/ai/AIInvestigationModal';
+import { SecurityCopilot } from '../../components/ai/SecurityCopilot';
 
 interface StageEvent {
   id: number;
@@ -118,7 +120,8 @@ export const ScanDetail: React.FC = () => {
   const [scan, setScan] = useState<ScanData | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'findings' | 'graph' | 'inspector' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'findings' | 'graph' | 'inspector' | 'copilot' | 'reports'>('overview');
+  const [aiModalOpen, setAiModalOpen] = useState(false);
 
   // Findings state
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -369,6 +372,7 @@ export const ScanDetail: React.FC = () => {
           { key: 'findings', label: `Findings (${scan.findings_count})`, icon: Bug },
           { key: 'graph', label: 'Evidence Graph', icon: Network },
           { key: 'inspector', label: 'Source Inspector', icon: FileCode },
+          { key: 'copilot', label: 'Security Copilot', icon: Sparkles },
           { key: 'reports', label: 'Reports & Export', icon: FileText },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -625,7 +629,14 @@ export const ScanDetail: React.FC = () => {
                   )}
 
                   {/* Action Buttons */}
-                  <div className="flex items-center gap-3 pt-3 border-t border-white/10">
+                  <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-white/10">
+                    <button
+                      onClick={() => setAiModalOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-brand-600 hover:from-purple-500 hover:to-brand-500 text-white font-medium text-xs transition shadow-[0_0_15px_rgba(168,85,247,0.25)]"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>Investigate with AI</span>
+                    </button>
                     <button
                       onClick={() => handleInspectFinding(selectedFinding)}
                       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-medium text-xs transition"
@@ -782,6 +793,35 @@ export const ScanDetail: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB 6: SECURITY COPILOT */}
+      {activeTab === 'copilot' && (
+        <SecurityCopilot
+          scanId={scan.id}
+          onSelectFinding={(fId) => {
+            fetchFindingDetail(fId);
+            setActiveTab('findings');
+          }}
+        />
+      )}
+
+      {/* AI Investigation Modal */}
+      {selectedFinding && (
+        <AIInvestigationModal
+          scanId={scan.id}
+          findingId={selectedFinding.id}
+          findingTitle={selectedFinding.title}
+          ruleId={selectedFinding.rule_id}
+          isOpen={aiModalOpen}
+          onClose={() => setAiModalOpen(false)}
+          onInspectSource={(filePath, lineStart, lineEnd) => {
+            setInspectorFile(filePath);
+            setInspectorLineStart(lineStart);
+            setInspectorLineEnd(lineEnd);
+            setActiveTab('inspector');
+          }}
+        />
       )}
     </div>
   );
