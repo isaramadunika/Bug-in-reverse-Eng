@@ -48,3 +48,8 @@ venv/
 # Docker / OS
 .DS_Store
 Thumbs.db
+
+# Local runtime storage
+api/data/
+data/
+storage/

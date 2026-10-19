@@ -8,18 +8,46 @@ from .models import AnalysisResult
 
 logger = logging.getLogger("reversebug.worker.db")
 
+def clean_nul(val: Any) -> Any:
+    """
+    Recursively removes NUL (0x00) bytes and \\u0000 characters from strings,
+    dictionaries, lists, tuples, and sets to prevent PostgreSQL DataError
+    (SQLSTATE 22021: PostgreSQL text fields cannot contain NUL bytes).
+    """
+    if isinstance(val, str):
+        return val.replace("\x00", "").replace("\u0000", "")
+    elif isinstance(val, dict):
+        return {clean_nul(k): clean_nul(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [clean_nul(x) for x in val]
+    elif isinstance(val, tuple):
+        return tuple(clean_nul(x) for x in val)
+    elif isinstance(val, set):
+        return {clean_nul(x) for x in val}
+    return val
+
+def safe_execute(cur, query: str, params: Any = None):
+    """
+    Executes SQL query ensuring all parameters are recursively stripped of NUL bytes
+    before being passed to psycopg / PostgreSQL.
+    """
+    if params is not None:
+        params = clean_nul(params)
+    return cur.execute(query, params)
+
 def get_connection():
     return psycopg.connect(settings.database_url, autocommit=False)
 
 def claim_job(worker_id: str) -> Optional[Dict[str, Any]]:
     """
-    Claims a queued scan_job using SELECT FOR UPDATE SKIP LOCKED.
+    Claims a queued scan_job or reclaims a timed-out running job using SELECT FOR UPDATE SKIP LOCKED.
     Returns the claimed job row dictionary or None if queue is empty.
     """
     query = """
         SELECT id, scan_id, kind, payload, priority, attempts, max_attempts
         FROM scan_jobs
-        WHERE status = 'queued' AND run_after <= now()
+        WHERE (status = 'queued' OR (status = 'running' AND locked_until < now() AND attempts < max_attempts))
+          AND run_after <= now()
         ORDER BY priority ASC, run_after ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1;
@@ -37,17 +65,18 @@ def claim_job(worker_id: str) -> Optional[Dict[str, Any]]:
     """
     with get_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(query)
+            safe_execute(cur, query)
             row = cur.fetchone()
             if not row:
                 conn.rollback()
                 return None
             job_id = row["id"]
-            cur.execute(update_query, (worker_id, job_id))
+            safe_execute(cur, update_query, (worker_id, job_id))
             claimed = cur.fetchone()
 
             # Update scans table status to running
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE scans
                 SET status = 'running',
@@ -71,7 +100,7 @@ def heartbeat_job(job_id: str, worker_id: str) -> bool:
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(query, (job_id, worker_id))
+            safe_execute(cur, query, (job_id, worker_id))
             conn.commit()
             return cur.rowcount > 0
 
@@ -88,7 +117,7 @@ def record_stage_event(
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(query, (scan_id, stage, status, message, duration_ms))
+            safe_execute(cur, query, (scan_id, stage, status, message, duration_ms))
             conn.commit()
 
 def calculate_security_score(findings: list) -> int:
@@ -123,7 +152,8 @@ def persist_analysis_results(
     with get_connection() as conn:
         with conn.cursor() as cur:
             # 1. Update artifact_versions metadata
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE artifact_versions
                 SET package_name = COALESCE(%s, package_name),
@@ -147,7 +177,8 @@ def persist_analysis_results(
 
             # 2. Insert components
             for comp in result.components:
-                cur.execute(
+                safe_execute(
+                    cur,
                     """
                     INSERT INTO components (scan_id, kind, name, exported, exported_explicit, permission, intent_filters)
                     VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
@@ -167,7 +198,8 @@ def persist_analysis_results(
             # 3. Insert findings and map fingerprints to finding IDs
             finding_id_map = {}
             for f in result.findings:
-                cur.execute(
+                safe_execute(
+                    cur,
                     """
                     INSERT INTO findings (
                         scan_id, fingerprint, rule_id, rule_version, title, description,
@@ -205,7 +237,8 @@ def persist_analysis_results(
             # 4. Insert evidence
             for ev in result.evidence:
                 finding_id = finding_id_map.get(ev.finding_fingerprint)
-                cur.execute(
+                safe_execute(
+                    cur,
                     """
                     INSERT INTO evidence (
                         scan_id, finding_id, artifact_sha256, evidence_type, location,
@@ -238,7 +271,8 @@ def persist_analysis_results(
             for occ in result.occurrences:
                 finding_id = finding_id_map.get(occ.finding_fingerprint)
                 if finding_id:
-                    cur.execute(
+                    safe_execute(
+                        cur,
                         """
                         INSERT INTO finding_occurrences (
                             finding_id, file_path, line_start, line_end, class_name, method_name, component_name
@@ -262,7 +296,8 @@ def persist_analysis_results(
 
             node_id_map = {}
             for n in graph_nodes:
-                cur.execute(
+                safe_execute(
+                    cur,
                     """
                     INSERT INTO evidence_nodes (scan_id, node_key, node_type, label, severity, properties)
                     VALUES (%s, %s, %s, %s, %s, %s::jsonb)
@@ -280,7 +315,8 @@ def persist_analysis_results(
                 src_id = node_id_map.get(e["source_key"])
                 tgt_id = node_id_map.get(e["target_key"])
                 if src_id and tgt_id:
-                    cur.execute(
+                    safe_execute(
+                        cur,
                         """
                         INSERT INTO evidence_edges (scan_id, source_id, target_id, edge_type, relation_status, provenance)
                         VALUES (%s, %s, %s, %s, %s, %s::jsonb)
@@ -305,7 +341,8 @@ def persist_analysis_results(
                 },
             }
 
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE scans
                 SET status = 'completed',
@@ -327,7 +364,8 @@ def persist_analysis_results(
 def fail_job(job_id: str, scan_id: str, error_message: str):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE scan_jobs
                 SET status = 'failed',
@@ -337,7 +375,8 @@ def fail_job(job_id: str, scan_id: str, error_message: str):
                 """,
                 (error_message, job_id),
             )
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE scans
                 SET status = 'failed',
@@ -352,7 +391,8 @@ def fail_job(job_id: str, scan_id: str, error_message: str):
 def complete_job(job_id: str):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
+            safe_execute(
+                cur,
                 """
                 UPDATE scan_jobs
                 SET status = 'succeeded',

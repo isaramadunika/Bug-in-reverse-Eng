@@ -61,15 +61,28 @@ type AgentExecutionResult struct {
 	CreatedAt        time.Time                `json:"created_at"`
 }
 
+type ExploitChain struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Severity    string   `json:"severity"`    // critical | high | medium | low
+	Feasibility string   `json:"feasibility"` // immediate | high | probable | theoretical
+	Impact      string   `json:"impact"`
+	Steps       []string `json:"steps"`
+	FindingIDs  []string `json:"finding_ids"`
+	RuleIDs     []string `json:"rule_ids"`
+	Remediation string   `json:"remediation"`
+}
+
 type CopilotQuestionRequest struct {
 	Question string `json:"question"`
 }
 
 type CopilotAnswerResponse struct {
-	Question        string   `json:"question"`
-	Answer          string   `json:"answer"`
-	CitedFindingIDs []string `json:"cited_finding_ids,omitempty"`
-	SuggestedFixes  []string `json:"suggested_fixes,omitempty"`
-	Model           string   `json:"model"`
-	TokensUsed      int      `json:"tokens_used"`
+	Question        string         `json:"question"`
+	Answer          string         `json:"answer"`
+	CitedFindingIDs []string       `json:"cited_finding_ids,omitempty"`
+	SuggestedFixes  []string       `json:"suggested_fixes,omitempty"`
+	ExploitChains   []ExploitChain `json:"exploit_chains,omitempty"`
+	Model           string         `json:"model"`
+	TokensUsed      int            `json:"tokens_used"`
 }

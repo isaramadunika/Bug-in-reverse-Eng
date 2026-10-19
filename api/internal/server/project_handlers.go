@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,8 @@ import (
 	"github.com/tetraneurons/reversebug/api/internal/httpx"
 	"github.com/tetraneurons/reversebug/api/internal/store"
 )
+
+var androidPackageRegex = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$`)
 
 func (s *Server) resolveOrgID(r *http.Request, u *store.User) (string, error) {
 	if explicit := r.Header.Get("X-Organization-ID"); explicit != "" {
@@ -69,10 +72,23 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		return httpx.BadRequest("Project name must be between 1 and 120 characters")
 	}
 
+	var pkgName *string
+	if req.PackageName != nil {
+		trimmed := strings.TrimSpace(*req.PackageName)
+		if trimmed != "" {
+			if !androidPackageRegex.MatchString(trimmed) {
+				return httpx.Validation(map[string]string{
+					"package_name": "Package name must follow Android package naming convention (e.g. com.example.app) or be left blank.",
+				})
+			}
+			pkgName = &trimmed
+		}
+	}
+
 	proj, err := s.store.CreateProject(r.Context(), orgID, u.ID, &store.CreateProjectInput{
 		Name:             req.Name,
 		Description:      strings.TrimSpace(req.Description),
-		PackageName:      req.PackageName,
+		PackageName:      pkgName,
 		ApplicationOwner: strings.TrimSpace(req.ApplicationOwner),
 		Environment:      req.Environment,
 		Tags:             req.Tags,
@@ -105,6 +121,9 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	projectID := chi.URLParam(r, "projectID")
+	if !isUUID(projectID) {
+		return httpx.ErrNotFound
+	}
 
 	proj, err := s.store.GetProject(r.Context(), orgID, projectID)
 	if errors.Is(err, store.ErrProjectNotFound) {
@@ -134,6 +153,9 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	projectID := chi.URLParam(r, "projectID")
+	if !isUUID(projectID) {
+		return httpx.ErrNotFound
+	}
 
 	var req updateProjectReq
 	if err := httpx.DecodeJSON(r, &req); err != nil {
@@ -179,6 +201,9 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	projectID := chi.URLParam(r, "projectID")
+	if !isUUID(projectID) {
+		return httpx.ErrNotFound
+	}
 
 	err = s.store.DeleteProject(r.Context(), orgID, projectID)
 	if errors.Is(err, store.ErrProjectNotFound) {

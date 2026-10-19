@@ -15,6 +15,8 @@ from .db import (
 from .models import AnalysisResult
 from .pipeline.manifest import ManifestParser, parse_manifest_file
 from .pipeline.rules import evaluate_static_rules
+from .pipeline.bytecode import scan_bytecode_vulnerabilities
+from .pipeline.re_engine import scan_reverse_engineering_and_crash_surface
 from .pipeline.secrets import scan_for_secrets
 from .pipeline.unpacker import unpack_apk
 
@@ -28,39 +30,38 @@ def execute_scan_job(job: Dict[str, Any]):
 
     logger.info("Starting execution for scan job %s (scan %s)", job_id, scan_id)
 
-    # 1. Fetch artifact details from database
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT a.storage_key, a.sha256, av.original_filename
-                FROM artifact_versions av
-                JOIN artifacts a ON a.id = av.artifact_id
-                WHERE av.id = %s;
-                """,
-                (artifact_version_id,),
-            )
-            row = cur.fetchone()
-            if not row:
-                raise ValueError(f"Artifact version {artifact_version_id} not found in database")
-            storage_key, artifact_sha256, original_filename = row
-
-    # Resolve APK file on disk
-    apk_path = settings.storage_dir / storage_key
-    if not apk_path.is_file():
-        # Fallback check relative to repository root
-        alt_path = Path("api/data/storage") / storage_key
-        if alt_path.is_file():
-            apk_path = alt_path
-        else:
-            alt_path2 = Path("../api/data/storage") / storage_key
-            if alt_path2.is_file():
-                apk_path = alt_path2
-            else:
-                raise FileNotFoundError(f"Storage object {storage_key} not found at {apk_path}")
-
     extract_dir = None
     try:
+        # 1. Fetch artifact details from database
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT a.storage_key, a.sha256, av.original_filename
+                    FROM artifact_versions av
+                    JOIN artifacts a ON a.id = av.artifact_id
+                    WHERE av.id = %s;
+                    """,
+                    (artifact_version_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"Artifact version {artifact_version_id} not found in database")
+                storage_key, artifact_sha256, original_filename = row
+
+        # Resolve APK file on disk
+        apk_path = settings.storage_dir / storage_key
+        if not apk_path.is_file():
+            # Fallback check relative to repository root
+            alt_path = Path("api/data/storage") / storage_key
+            if alt_path.is_file():
+                apk_path = alt_path
+            else:
+                alt_path2 = Path("../api/data/storage") / storage_key
+                if alt_path2.is_file():
+                    apk_path = alt_path2
+                else:
+                    raise FileNotFoundError(f"Storage object {storage_key} not found at {apk_path}")
         # Stage 1: Unpacking & validation
         start_t = time.perf_counter()
         record_stage_event(scan_id, "unpacking", "started", "Extracting APK archive and validating integrity")
@@ -97,7 +98,22 @@ def execute_scan_job(job: Dict[str, Any]):
             dur_ms,
         )
 
-        # Stage 4: Secret & Entropy Scanning
+        # Stage 4: Bytecode & Security Vulnerability Engine
+        start_t = time.perf_counter()
+        record_stage_event(scan_id, "bytecode_analysis", "started", "Auditing bytecode for cryptographic and API vulnerabilities")
+        byte_findings, byte_evidence, byte_occurrences = scan_bytecode_vulnerabilities(
+            extract_dir, verified_sha256
+        )
+        dur_ms = int((time.perf_counter() - start_t) * 1000)
+        record_stage_event(
+            scan_id,
+            "bytecode_analysis",
+            "completed",
+            f"Bytecode audit completed, identified {len(byte_findings)} vulnerabilities",
+            dur_ms,
+        )
+
+        # Stage 5: Secret & Entropy Scanning
         start_t = time.perf_counter()
         record_stage_event(scan_id, "secrets_scan", "started", "Scanning files and assets for hardcoded secrets")
         secret_findings, secret_evidence, secret_occurrences = scan_for_secrets(
@@ -112,10 +128,30 @@ def execute_scan_job(job: Dict[str, Any]):
             dur_ms,
         )
 
+        # Stage 6: Reverse Engineering, Cloud Leakage & Crash Resilience Engine
+        start_t = time.perf_counter()
+        record_stage_event(
+            scan_id,
+            "reverse_engineering",
+            "started",
+            "Auditing APK for crash vectors, dynamic reflection, sensitive endpoints, and reverse engineering resilience",
+        )
+        re_findings, re_evidence, re_occurrences = scan_reverse_engineering_and_crash_surface(
+            extract_dir, manifest, verified_sha256
+        )
+        dur_ms = int((time.perf_counter() - start_t) * 1000)
+        record_stage_event(
+            scan_id,
+            "reverse_engineering",
+            "completed",
+            f"Reverse engineering & crash surface audit completed, identified {len(re_findings)} findings",
+            dur_ms,
+        )
+
         # Combine all findings
-        all_findings = comp_findings + secret_findings
-        all_evidence = comp_evidence + secret_evidence
-        all_occurrences = comp_occurrences + secret_occurrences
+        all_findings = comp_findings + byte_findings + secret_findings + re_findings
+        all_evidence = comp_evidence + byte_evidence + secret_evidence + re_evidence
+        all_occurrences = comp_occurrences + byte_occurrences + secret_occurrences + re_occurrences
 
         result = AnalysisResult(
             package_name=manifest.package_name,
@@ -142,8 +178,9 @@ def execute_scan_job(job: Dict[str, Any]):
 
     except Exception as e:
         logger.exception("Scan job %s failed: %s", job_id, e)
-        fail_job(job_id, scan_id, str(e))
-        record_stage_event(scan_id, "static_analysis", "failed", f"Analysis failed: {e}")
+        error_msg = str(e).replace("\x00", "")
+        fail_job(job_id, scan_id, error_msg)
+        record_stage_event(scan_id, "static_analysis", "failed", f"Analysis failed: {error_msg}")
         raise
     finally:
         if extract_dir and extract_dir.exists():

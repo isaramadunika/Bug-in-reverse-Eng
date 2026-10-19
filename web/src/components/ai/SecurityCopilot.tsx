@@ -8,15 +8,31 @@ import {
   CheckSquare, 
   HelpCircle, 
   RefreshCw,
-  ExternalLink 
+  ExternalLink,
+  Workflow,
+  ShieldAlert,
+  AlertOctagon
 } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
+
+interface ExploitChain {
+  id: string;
+  title: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  feasibility: string;
+  impact: string;
+  steps: string[];
+  finding_ids?: string[];
+  rule_ids?: string[];
+  remediation: string;
+}
 
 interface CopilotAnswerResponse {
   question: string;
   answer: string;
   cited_finding_ids?: string[];
   suggested_fixes?: string[];
+  exploit_chains?: ExploitChain[];
   model: string;
   tokens_used: number;
 }
@@ -27,6 +43,7 @@ interface Message {
   text: string;
   citedFindingIds?: string[];
   suggestedFixes?: string[];
+  exploitChains?: ExploitChain[];
   timestamp: Date;
 }
 
@@ -40,7 +57,7 @@ export const SecurityCopilot: React.FC<SecurityCopilotProps> = ({ scanId, onSele
     {
       id: 'welcome',
       sender: 'assistant',
-      text: "Hello! I am your **ReverseBug Security Copilot**, grounded in the static analysis evidence, component reachability graph, and deterministic security score for this scan.\n\nAsk me anything about potential attack vectors, exploit feasibility, or remediation strategies.",
+      text: "Hello! I am your **ReverseBug Security Copilot**, powered by automated static evidence and **AI Vulnerability Exploit Chain Synthesis**.\n\nAsk me anything about potential multi-stage attack chains, IPC fuzzing crashes, reverse engineering defenses, or remediation strategies.",
       timestamp: new Date(),
     },
   ]);
@@ -48,9 +65,9 @@ export const SecurityCopilot: React.FC<SecurityCopilotProps> = ({ scanId, onSele
   const [asking, setAsking] = useState(false);
 
   const quickPrompts = [
+    'Synthesize full vulnerability exploit chains',
     'Summarize top critical risks in this APK',
-    'Can external applications hijack AuthActivity?',
-    'How do I fix cleartext traffic and debuggable flags?',
+    'Can external applications crash or hijack components?',
     'Generate an executive remediation checklist',
   ];
 
@@ -80,6 +97,7 @@ export const SecurityCopilot: React.FC<SecurityCopilotProps> = ({ scanId, onSele
         text: res.answer,
         citedFindingIds: res.cited_finding_ids,
         suggestedFixes: res.suggested_fixes,
+        exploitChains: res.exploit_chains,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -141,6 +159,58 @@ export const SecurityCopilot: React.FC<SecurityCopilotProps> = ({ scanId, onSele
               }`}
             >
               <div className="whitespace-pre-wrap">{m.text}</div>
+
+              {/* Synthesized Vulnerability Exploit Chains */}
+              {m.exploitChains && m.exploitChains.length > 0 && (
+                <div className="pt-3 border-t border-white/10 space-y-2">
+                  <div className="text-[10px] font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Workflow className="w-3.5 h-3.5" />
+                    <span>Synthesized Exploit Chains ({m.exploitChains.length}):</span>
+                  </div>
+                  <div className="space-y-2">
+                    {m.exploitChains.map((chain) => (
+                      <div
+                        key={chain.id}
+                        className="p-3 rounded-xl bg-slate-950/80 border border-amber-500/20 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 font-bold text-white text-[11px]">
+                            <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                            <span>{chain.title}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                              chain.severity === 'critical'
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            }`}
+                          >
+                            {chain.severity}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          <span className="text-slate-500">Feasibility: </span>
+                          <span className="text-cyan-400 capitalize">{chain.feasibility}</span>
+                          <span className="text-slate-600 mx-1.5">&bull;</span>
+                          <span className="text-slate-500">Impact: </span>
+                          <span className="text-slate-300">{chain.impact}</span>
+                        </div>
+                        <div className="space-y-1 bg-slate-900/60 p-2 rounded-lg border border-white/5">
+                          {chain.steps.map((st, sIdx) => (
+                            <div key={sIdx} className="text-[10px] text-slate-300 leading-relaxed font-mono">
+                              {st}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-[10px] text-emerald-400 bg-emerald-950/30 p-2 rounded-lg border border-emerald-500/20">
+                          <span className="font-bold">Remediation: </span>
+                          <span>{chain.remediation}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Cited Findings Chips */}
               {m.citedFindingIds && m.citedFindingIds.length > 0 && (

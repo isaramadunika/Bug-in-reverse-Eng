@@ -141,7 +141,7 @@ export const Dashboard: React.FC = () => {
       {/* Quick Action Ribbon */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Link
-          to="/projects/new"
+          to="/projects?new=1"
           className="glass-card p-4 rounded-xl flex items-center space-x-3 hover:border-brand-500/40 group"
         >
           <div className="h-9 w-9 rounded-lg bg-brand-500/10 border border-brand-500/30 flex items-center justify-center text-brand-400 group-hover:scale-105 transition-transform">

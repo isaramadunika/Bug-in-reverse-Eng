@@ -133,17 +133,32 @@ class GraphBuilder:
                 },
             )
 
+            # Use schema-compliant edge type (CHECK constraint in DB) with rich provenance
+            edge_type = "ASSOCIATED_WITH"
+            if f.category == "network":
+                edge_type = "NETWORK_SENDS_TO"
+            elif f.category in ("secrets", "storage"):
+                edge_type = "READS_FROM"
+            elif f.category in ("crash", "reverse_engineering", "native", "component"):
+                edge_type = "REFERENCES"
+
+            edge_provenance = {
+                "category": f.category,
+                "rule_id": f.rule_id,
+                "severity": f.severity,
+            }
+
             # Connect finding to affected component or sink
             connected = False
             for comp_name, c_key in comp_keys.items():
                 short_name = comp_name.split(".")[-1]
                 if short_name in f.title or comp_name in f.description:
-                    self.add_edge(f_key, c_key, "ASSOCIATED_WITH")
+                    self.add_edge(f_key, c_key, edge_type, provenance=edge_provenance)
                     connected = True
                     break
 
             if not connected:
                 # Associate directly with root APK or manifest
-                self.add_edge(f_key, apk_key, "ASSOCIATED_WITH")
+                self.add_edge(f_key, apk_key, "ASSOCIATED_WITH", provenance=edge_provenance)
 
         return self.nodes, self.edges

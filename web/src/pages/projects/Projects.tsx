@@ -56,6 +56,9 @@ export const Projects: React.FC = () => {
 
   useEffect(() => {
     fetchProjects();
+    if (new URLSearchParams(window.location.search).get('new')) {
+      setShowCreateModal(true);
+    }
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -80,7 +83,12 @@ export const Projects: React.FC = () => {
       setPackageName('');
       fetchProjects();
     } catch (err: any) {
-      setCreateError(err.message || 'Failed to create project');
+      if (err.fields) {
+        const firstFieldMsg = Object.values(err.fields)[0] as string;
+        setCreateError(firstFieldMsg);
+      } else {
+        setCreateError(err.message || 'Failed to create project');
+      }
     } finally {
       setCreating(false);
     }
@@ -282,6 +290,7 @@ export const Projects: React.FC = () => {
                   onChange={(e) => setPackageName(e.target.value)}
                   className="w-full px-3 py-2 bg-navy-900 border border-white/10 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 font-mono"
                 />
+                <p className="text-[10px] text-slate-500">Standard Android format (e.g. com.example.app) or leave blank</p>
               </div>
 
               <div className="space-y-1">
